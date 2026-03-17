@@ -47,28 +47,8 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   const token = getBearerToken(req.headers);
   const userID = validateJWT(token, cfg.jwtSecret);
-  const formData = await req.formData();
-
-  const thumbnail = formData.get("thumbnail");
-  if (!(thumbnail instanceof File)) {
-    throw new BadRequestError("Thumbnail is of incorrect type");
-  }
-
-  const MAX_UPLOAD_SIZE = 10 << 20;
-  if (thumbnail.size > MAX_UPLOAD_SIZE) {
-    throw new BadRequestError("File size exceeds max upload size");
-  }
-
-  const mediaType = thumbnail.type;
-  const data = await thumbnail.arrayBuffer();
-
-  const extension = mediaTypeToExt(mediaType);
-  const fileName = `${videoId}${extension}`;
-  const filePath = getAssetDiskPath(cfg, fileName);
-  const fileURL = getAssetURL(cfg, fileName);
-  Bun.write(filePath, data);
-
   const video = getVideo(cfg.db, videoId);
+
   if (!video) {
     throw new BadRequestError("Video Id invalid");
   }
@@ -76,7 +56,36 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     throw new UserForbiddenError("User does not own the specified video");
   }
 
+  const formData = await req.formData();
+  const thumbnail = formData.get("thumbnail");
+
+  if (!(thumbnail instanceof File)) {
+    throw new BadRequestError("Thumbnail is of incorrect type");
+  }
+
+  const MAX_UPLOAD_SIZE = 10 << 20;
+
+  if (thumbnail.size > MAX_UPLOAD_SIZE) {
+    throw new BadRequestError("File size exceeds max upload size");
+  }
+
+  const mediaType = thumbnail.type;
+
+  if (mediaType !== "image/png" && mediaType !== "image/jpg") {
+    throw new BadRequestError("Image type invalid");
+  }
+
+  const data = await thumbnail.arrayBuffer();
+
+  const extension = mediaTypeToExt(mediaType);
+  const fileName = `${videoId}${extension}`;
+
+  const filePath = getAssetDiskPath(cfg, fileName);
+  await Bun.write(filePath, data);
+
+  const fileURL = getAssetURL(cfg, fileName);
   video.thumbnailURL = fileURL;
+
   updateVideo(cfg.db, video);
 
   console.log("uploading thumbnail for video", videoId, "by user", userID);
