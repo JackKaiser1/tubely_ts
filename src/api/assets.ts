@@ -37,7 +37,7 @@ export async function writeFileFromPart(cfg: ApiConfig, part: Bun.FormDataEntryV
   const randString = randomBytes(32).toString("base64url");
   const fileName = `${randString}${fileExtension}`;
   const filePath = getAssetDiskPath(cfg, fileName);
-  Bun.write(filePath, blob);
+  await Bun.write(filePath, blob);
   return {
     fileUrl: getAssetURL(cfg, fileName),
     bunFile: Bun.file(filePath),
