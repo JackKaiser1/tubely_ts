@@ -4,8 +4,10 @@ import { S3Client, type BunRequest } from "bun";
 import { BadRequestError, UserForbiddenError } from "./errors";
 import { getBearerToken, validateJWT } from "../auth";
 import { getVideo, updateVideo } from "../db/videos";
-import { writeFileFromPart } from "./assets";
+import { mediaTypeToExt, getAssetDiskPath, getAssetURL } from "./assets";
 import { getVideoAspectRatio } from "./video-meta";
+import { randomBytes } from "node:crypto";
+import { processVideoForFastStart } from "./video-meta";
 
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -42,15 +44,15 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("Video is not mp4");
   }
   
-  const {fileUrl, bunFile, filePath, fileName, blob} = await writeFileFromPart(cfg, videoFile);
+  const { bunFile, filePath, fileName } = await writeFileFromPart(cfg, videoFile);
   const aspectRatio = await getVideoAspectRatio(filePath);
 
-  const s3FileName = `${aspectRatio}/${fileName}`;
-  const s3File = cfg.s3Client.file(s3FileName, { bucket: cfg.s3Bucket });
+  const key = `${aspectRatio}/${fileName}`;
+  const s3File = cfg.s3Client.file(key, { bucket: cfg.s3Bucket });
   s3File.write(bunFile, { type: bunFile.type });
 
 
-  videoMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3FileName}`;
+  videoMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${key}`;
   updateVideo(cfg.db, videoMetaData);
 
   bunFile.delete();
@@ -72,4 +74,33 @@ function validateUUID(id: string) {
 
   return id;
 }
+
+export async function writeFileFromPart(cfg: ApiConfig, part: Bun.FormDataEntryValue) {
+  if (!(part instanceof File)) {
+      throw new BadRequestError("Video is of incorrect type");
+    }
+
+  const blob = await part.arrayBuffer(); 
+  const fileExtension = mediaTypeToExt(part.type);
+  const randString = randomBytes(32).toString("base64url");
+  const fileName = `${randString}${fileExtension}`;
+  const filePath = getAssetDiskPath(cfg, fileName);
+  
+  await Bun.write(filePath, blob);
+  const tempBunFile = Bun.file(filePath);
+  const processedFilePath = await processVideoForFastStart(filePath);
+
+  tempBunFile.delete();
+
+  return {
+    fileUrl: getAssetURL(cfg, fileName),
+    bunFile: Bun.file(processedFilePath),
+    filePath: processedFilePath,
+    fileName: fileName,
+  };
+}
+
+
+
+
 

@@ -27,24 +27,6 @@ export function getAssetURL(cfg: ApiConfig, fileName: string) {
   return `http://localhost:${cfg.port}/assets/${fileName}`;
 }
 
-export async function writeFileFromPart(cfg: ApiConfig, part: Bun.FormDataEntryValue) {
-  if (!(part instanceof File)) {
-      throw new BadRequestError("Video is of incorrect type");
-    }
 
-  const blob = await part.arrayBuffer(); 
-  const fileExtension = mediaTypeToExt(part.type);
-  const randString = randomBytes(32).toString("base64url");
-  const fileName = `${randString}${fileExtension}`;
-  const filePath = getAssetDiskPath(cfg, fileName);
-  await Bun.write(filePath, blob);
-  return {
-    fileUrl: getAssetURL(cfg, fileName),
-    bunFile: Bun.file(filePath),
-    filePath: filePath,
-    fileName: fileName,
-    blob: blob,
-  };
-}
 
 
