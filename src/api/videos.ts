@@ -5,6 +5,7 @@ import { BadRequestError, UserForbiddenError } from "./errors";
 import { getBearerToken, validateJWT } from "../auth";
 import { getVideo, updateVideo } from "../db/videos";
 import { writeFileFromPart } from "./assets";
+import { getVideoAspectRatio } from "./video-meta";
 
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -42,10 +43,14 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   }
   
   const {fileUrl, bunFile, filePath, fileName, blob} = await writeFileFromPart(cfg, videoFile);
-  const s3File = cfg.s3Client.file(fileName, { bucket: cfg.s3Bucket });
+  const aspectRatio = await getVideoAspectRatio(filePath);
+
+  const s3FileName = `${aspectRatio}/${fileName}`;
+  const s3File = cfg.s3Client.file(s3FileName, { bucket: cfg.s3Bucket });
   s3File.write(bunFile, { type: bunFile.type });
 
-  videoMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${fileName}`;
+
+  videoMetaData.videoURL = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3FileName}`;
   updateVideo(cfg.db, videoMetaData);
 
   bunFile.delete();

@@ -65,3 +65,39 @@ export async function handlerVideosRetrieve(cfg: ApiConfig, req: Request) {
   const videos = getVideos(cfg.db, userID);
   return respondWithJSON(200, videos);
 }
+
+type StdoutJSON = {
+  programs: Object[];
+  streams: { width: number, height: number }[];
+}
+
+export async function getVideoAspectRatio(filePath: string) {
+  const proc = Bun.spawn({
+    cmd: ["ffprobe","-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json",filePath],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdoutText = await new Response(proc.stdout).text();
+  const stderrText = await new Response(proc.stderr).text();
+
+  if (await proc.exited !== 0) {
+    throw new Error(`Error: ${stderrText}`);
+  }
+
+  const stdoutObj: StdoutJSON = JSON.parse(stdoutText);
+  if (!stdoutObj.streams || stdoutObj.streams.length === 0) {
+    throw new Error("No video streams found");
+  }
+
+  const {width, height} = stdoutObj.streams[0];
+
+  switch (Math.floor(width / height)) {
+    case 1:
+      return "landscape";
+    case 0: 
+      return "portrait";
+    default:
+      return "other";
+  }
+}
