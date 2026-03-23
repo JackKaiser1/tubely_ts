@@ -8,7 +8,6 @@ import { mediaTypeToExt, getAssetDiskPath, getAssetURL } from "./assets";
 import { getVideoAspectRatio } from "./video-meta";
 import { randomBytes } from "node:crypto";
 import { processVideoForFastStart } from "./video-meta";
-import { dbVideoToSignedVideo } from "./signed-url";
 
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -20,12 +19,12 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const accessToken = getBearerToken(req.headers);
   const userId = validateJWT(accessToken, cfg.jwtSecret);
 
-  const unsignedVideo = getVideo(cfg.db, validVideoId);
-  if (!unsignedVideo) {
+  const video = getVideo(cfg.db, validVideoId);
+  if (!video) {
     throw new BadRequestError("Video Id does not match record in database");
   }
 
-  if (unsignedVideo.userID !== userId) {
+  if (video.userID !== userId) {
     throw new UserForbiddenError("User is not owner of video");
   }
 
@@ -50,16 +49,15 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
   const key = `${aspectRatio}/${fileName}`;
   const s3File = cfg.s3Client.file(key, { bucket: cfg.s3Bucket });
-  s3File.write(bunFile, { type: bunFile.type });
+  s3File.write(bunFile, { type: "video/mp4" });
 
 
-  unsignedVideo.videoURL = `${key}`;
-  updateVideo(cfg.db, unsignedVideo);
+  video.videoURL = `${cfg.s3CfDistribution}/${key}`;
+  updateVideo(cfg.db, video);
 
   bunFile.delete();
   
-  const signedVideo = dbVideoToSignedVideo(cfg, unsignedVideo);
-  return respondWithJSON(200, signedVideo);
+  return respondWithJSON(200, video);
 }
 
 function validateUUID(id: string) {
